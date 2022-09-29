@@ -1,0 +1,106 @@
+plugins {
+    id 'idea'
+}
+
+allprojects {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        maven {
+            url "https://packages.confluent.io/maven/"
+        }
+        // confluent's schema registry client depends on 'com.github.everit-org.json-schema:org.everit.json.schema'.
+        // the version, for some reason, is not stored on maven central, and mavenrepository.com says it is located
+        // here.
+        maven {
+            url "https://repository.mulesoft.org/nexus/content/repositories/public"
+        }
+    }
+}
+
+subprojects {
+    version = '1.0'
+}
+
+
+configure(subprojects.findAll { project -> file("${project.name}/src/main/java").exists() }) {
+
+    apply plugin: 'java'
+    apply plugin: 'application'
+    apply plugin: 'eclipse'
+
+    group = 'io.kineticedge.poc'
+    description = "${project.name}"
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+
+    idea {
+        module {
+            inheritOutputDirs = false
+            outputDir = compileJava.destinationDir
+            testOutputDir = compileTestJava.destinationDir
+        }
+    }
+
+    dependencies {
+
+        implementation group: 'ch.qos.logback', name: 'logback-classic', version: logback_version
+        implementation group: 'com.beust', name: 'jcommander', version: jcommander_version
+        implementation group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: jackson_version
+        implementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: jackson_version
+        implementation group: 'com.fasterxml.jackson.datatype', name: 'jackson-datatype-jsr310', version: jackson_version
+        implementation group: 'org.apache.commons', name: 'commons-lang3', version: apache_commons_version
+        implementation(group: 'org.apache.kafka', name: 'kafka-clients', version: kafka_version) {
+            version {
+                strictly kafka_version
+            }
+        }
+        implementation group: 'org.slf4j', name: 'slf4j-api', version: slf4j_version
+
+        // lombok dependencies
+        compileOnly group: 'org.projectlombok', name: 'lombok', version: lombok_version
+        annotationProcessor group: 'org.projectlombok', name: 'lombok', version: lombok_version
+
+        testCompileOnly group: 'org.projectlombok', name: 'lombok', version: lombok_version
+        testAnnotationProcessor group: 'org.projectlombok', name: 'lombok', version: lombok_version
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    //
+    // I use to use gradle run to run an application as it will build the class path for you from the build scripts,
+    // but for whatever reason when you do a Control-C from a gradle the signal is not propagated to the java application.
+    // for Kafka Streams applications this can get rather annoying, since an ungraceful shutdown can cause delays on
+    // restart slowing down development time.
+    //
+    // Instead I have gradle use to generate a "run.sh" script that builds the classpath and the script executes
+    // java, so when control-c is used to terminate the application, the signal is properly propagated from the script
+    // to the java application.
+    //
+    // for spring you can use bootRun, but typically building the stand-alone jar and running that would also have the
+    // classpath built for you.
+    //
+    task buildRunScript() {
+        doLast {
+
+            def cp = sourceSets.main.runtimeClasspath.collect{"export CP=\"\${CP}:${it}\""}.join("\n")
+
+            def f = new File(projectDir, "run.sh")
+            f.text = """#!/bin/sh
+set -e
+gradle assemble > /dev/null
+
+export CP=""
+${cp}
+
+java -cp \${CP} io.kineticedge.poc.${project.name}.Main "\$@"
+"""
+            f.setExecutable(true)
+        }
+    }
+
+    build.finalizedBy buildRunScript
+
+}

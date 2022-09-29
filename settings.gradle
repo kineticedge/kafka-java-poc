@@ -1,0 +1,14 @@
+rootProject.name = 'kafka-java-poc'
+
+buildscript {
+	repositories {
+		mavenCentral()
+	}
+	dependencies {
+	}
+}
+
+include 'common'
+include 'producer'
+include 'consumer'
+//include 'streams'
